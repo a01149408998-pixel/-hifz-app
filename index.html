@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>حافظ - تحفيظ القرآن الكريم</title>
+<meta name="theme-color" content="#0d4a3a">
+<meta name="description" content="أداة لتحفيظ القرآن الكريم آية آية مع تتبع التقدم">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="حافظ">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Reem+Kufi:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --parchment:#f7f0dd; --parchment-2:#fffaf0; --ink:#1f2a24; --ink-soft:#4a4436;
+    --gold:#b8912f; --gold-light:#e4cf8f; --green:#0d4a3a; --green-light:#e6efe9;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--green);
+    background-image: radial-gradient(circle at 50% 0%, #12604a, #0a3a2d 70%);
+    min-height:100vh; font-family:'Amiri', serif; color:var(--ink); padding:16px;
+  }
+  .page{ max-width:520px; margin:0 auto; background:var(--parchment); border-radius:6px;
+    border:3px double var(--gold); box-shadow:0 10px 40px rgba(0,0,0,0.4); padding:6px; }
+  .page-inner{ border:1px solid var(--gold-light); border-radius:4px; padding:20px 18px; }
+  .title{ text-align:center; font-family:'Reem Kufi', sans-serif; font-size:22px; font-weight:500; color:var(--green); margin:0 0 4px; }
+  .subtitle{ text-align:center; font-size:13px; color:var(--ink-soft); margin:0 0 16px; font-family:Tahoma,Arial,sans-serif; }
+  .ornament{ text-align:center; color:var(--gold); font-size:14px; margin:0 0 16px; letter-spacing:6px; }
+  select, input, textarea, button{ font-family:Tahoma,Arial,sans-serif; font-size:14px; }
+  select{ flex:1; padding:8px 10px; border-radius:6px; border:1px solid var(--gold); background:var(--parchment-2); color:var(--ink); }
+  button{ padding:8px 14px; border-radius:6px; border:1px solid var(--gold); background:var(--parchment-2); color:var(--green); cursor:pointer; }
+  button:active{ transform:scale(0.97); }
+  button.primary{ background:var(--green); color:var(--parchment-2); border-color:var(--green); }
+  .toolbar{ display:flex; gap:8px; margin-bottom:14px; }
+  .status{ text-align:center; font-family:Tahoma,Arial,sans-serif; font-size:13px; color:var(--ink-soft); padding:24px 0; display:none; }
+  .status.error{ color:#a12a2a; }
+  .progress-box{ display:flex; justify-content:space-between; align-items:center; background:var(--green-light); border-radius:8px; padding:8px 14px; margin-bottom:6px; font-family:Tahoma,Arial,sans-serif; font-size:13px; color:var(--green); }
+  .progress-track{ height:6px; background:var(--green-light); border-radius:4px; overflow:hidden; margin-bottom:20px; }
+  .progress-bar{ height:100%; width:0%; background:var(--gold); transition:width .2s; }
+  .verse-block{ display:inline; font-size:23px; line-height:2.4; cursor:pointer; }
+  .ayah-badge{ display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; border:1.5px solid var(--gold); background:var(--parchment-2); color:var(--green); font-family:Tahoma,Arial,sans-serif; font-size:12px; font-weight:bold; margin:0 4px; vertical-align:middle; }
+  .verse-actions{ display:flex; align-items:center; justify-content:flex-end; gap:8px; margin:8px 0 20px; font-family:Tahoma,Arial,sans-serif; font-size:12px; color:var(--ink-soft); }
+  .verse-actions button{ font-size:12px; padding:4px 10px; }
+  .verse-actions button.memorized{ background:var(--green); color:#fff; }
+  .surah-text{ text-align:justify; text-align-last:right; }
+  footer{ text-align:center; font-family:Tahoma,Arial,sans-serif; font-size:11px; color:rgba(255,255,255,0.55); margin-top:14px; }
+  .source-note{ text-align:center; font-family:Tahoma,Arial,sans-serif; font-size:11px; color:var(--ink-soft); margin:14px 0 0; opacity:0.8; }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="page-inner">
+      <div class="title">حافظ</div>
+      <div class="subtitle">رفيقك في تحفيظ القرآن الكريم</div>
+      <div class="ornament">۞ ۝ ۞</div>
+
+      <div class="toolbar">
+        <select id="surahSelect"></select>
+      </div>
+
+      <div class="progress-box">
+        <span>التقدم في الحفظ</span>
+        <span id="progressText">0 / 0</span>
+      </div>
+      <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+
+      <div id="statusMsg" class="status"></div>
+      <div id="verseList" class="surah-text"></div>
+      <div class="source-note">النصوص من Al Quran Cloud (رواية حفص عن عاصم، الرسم العثماني)</div>
+    </div>
+  </div>
+  <footer>افتح القائمة في متصفحك واختر «إضافة إلى الشاشة الرئيسية»</footer>
+
+<script>
+const SURAH_LIST = [
+  [1,"الفاتحة"],[2,"البقرة"],[3,"آل عمران"],[4,"النساء"],[5,"المائدة"],[6,"الأنعام"],[7,"الأعراف"],
+  [8,"الأنفال"],[9,"التوبة"],[10,"يونس"],[11,"هود"],[12,"يوسف"],[13,"الرعد"],[14,"إبراهيم"],[15,"الحجر"],
+  [16,"النحل"],[17,"الإسراء"],[18,"الكهف"],[19,"مريم"],[20,"طه"],[21,"الأنبياء"],[22,"الحج"],
+  [23,"المؤمنون"],[24,"النور"],[25,"الفرقان"],[26,"الشعراء"],[27,"النمل"],[28,"القصص"],[29,"العنكبوت"],
+  [30,"الروم"],[31,"لقمان"],[32,"السجدة"],[33,"الأحزاب"],[34,"سبأ"],[35,"فاطر"],[36,"يس"],[37,"الصافات"],
+  [38,"ص"],[39,"الزمر"],[40,"غافر"],[41,"فصلت"],[42,"الشورى"],[43,"الزخرف"],[44,"الدخان"],[45,"الجاثية"],
+  [46,"الأحقاف"],[47,"محمد"],[48,"الفتح"],[49,"الحجرات"],[50,"ق"],[51,"الذاريات"],[52,"الطور"],
+  [53,"النجم"],[54,"القمر"],[55,"الرحمن"],[56,"الواقعة"],[57,"الحديد"],[58,"المجادلة"],[59,"الحشر"],
+  [60,"الممتحنة"],[61,"الصف"],[62,"الجمعة"],[63,"المنافقون"],[64,"التغابن"],[65,"الطلاق"],[66,"التحريم"],
+  [67,"الملك"],[68,"القلم"],[69,"الحاقة"],[70,"المعارج"],[71,"نوح"],[72,"الجن"],[73,"المزمل"],
+  [74,"المدثر"],[75,"القيامة"],[76,"الإنسان"],[77,"المرسلات"],[78,"النبأ"],[79,"النازعات"],[80,"عبس"],
+  [81,"التكوير"],[82,"الانفطار"],[83,"المطففين"],[84,"الانشقاق"],[85,"البروج"],[86,"الطارق"],[87,"الأعلى"],
+  [88,"الغاشية"],[89,"الفجر"],[90,"البلد"],[91,"الشمس"],[92,"الليل"],[93,"الضحى"],[94,"الشرح"],
+  [95,"التين"],[96,"العلق"],[97,"القدر"],[98,"البينة"],[99,"الزلزلة"],[100,"العاديات"],[101,"القارعة"],
+  [102,"التكاثر"],[103,"العصر"],[104,"الهمزة"],[105,"الفيل"],[106,"قريش"],[107,"الماعون"],[108,"الكوثر"],
+  [109,"الكافرون"],[110,"النصر"],[111,"المسد"],[112,"الإخلاص"],[113,"الفلق"],[114,"الناس"]
+];
+
+const select = document.getElementById('surahSelect');
+const statusMsg = document.getElementById('statusMsg');
+const verseListEl = document.getElementById('verseList');
+const progressText = document.getElementById('progressText');
+const progressBar = document.getElementById('progressBar');
+
+const PROGRESS_KEY = 'hifz-progress';
+const surahCache = {};
+let state = {};
+
+function loadState(){
+  try { state = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}'); } catch(e){ state = {}; }
+}
+function saveState(){ localStorage.setItem(PROGRESS_KEY, JSON.stringify(state)); }
+
+SURAH_LIST.forEach(([num, name]) => {
+  const opt = document.createElement('option');
+  opt.value = num;
+  opt.textContent = num + ' - سورة ' + name;
+  select.appendChild(opt);
+});
+
+function getVerseState(surahNum, i){
+  const key = 's' + surahNum;
+  if (!state[key]) state[key] = {};
+  if (!state[key][i]) state[key][i] = { memorized:false, repeats:0, revealed:true };
+  return state[key][i];
+}
+
+async function getSurahVerses(num){
+  const cacheKey = 'hifz-surah-' + num;
+  if (surahCache[num]) return surahCache[num];
+  const stored = localStorage.getItem(cacheKey);
+  if (stored){
+    try { const verses = JSON.parse(stored); surahCache[num] = verses; return verses; } catch(e){}
+  }
+  const res = await fetch('https://api.alquran.cloud/v1/surah/' + num);
+  if (!res.ok) throw new Error('network');
+  const json = await res.json();
+  const verses = json.data.ayahs.map(a => a.text);
+  surahCache[num] = verses;
+  localStorage.setItem(cacheKey, JSON.stringify(verses));
+  return verses;
+}
+
+async function renderSurah(){
+  const num = select.value;
+  verseListEl.innerHTML = '';
+  statusMsg.className = 'status';
+  statusMsg.style.display = 'block';
+  statusMsg.textContent = 'جاري تحميل السورة...';
+  progressText.textContent = '0 / 0';
+  progressBar.style.width = '0%';
+
+  let verses;
+  try {
+    verses = await getSurahVerses(num);
+  } catch(e){
+    statusMsg.className = 'status error';
+    statusMsg.textContent = 'محتاج اتصال بالإنترنت أول مرة تفتح فيها السورة دي. تأكد من النت وحاول تاني.';
+    return;
+  }
+  statusMsg.style.display = 'none';
+
+  let memorizedCount = 0;
+  verses.forEach((text, i) => {
+    const vs = getVerseState(num, i);
+    if (vs.memorized) memorizedCount++;
+
+    const wrap = document.createElement('span');
+    wrap.className = 'verse-block';
+    wrap.onclick = () => {
+      vs.revealed = !vs.revealed;
+      saveState();
+      wrap.firstChild.textContent = vs.revealed ? text : '• • • • •';
+    };
+    const txt = document.createTextNode(vs.revealed ? text : '• • • • •');
+    const badge = document.createElement('span');
+    badge.className = 'ayah-badge';
+    badge.textContent = i+1;
+    wrap.appendChild(txt);
+    wrap.appendChild(badge);
+    verseListEl.appendChild(wrap);
+
+    const actions = document.createElement('div');
+    actions.className = 'verse-actions';
+    const repLabel = document.createElement('span');
+    repLabel.textContent = 'التكرار: ' + vs.repeats;
+    const repBtn = document.createElement('button');
+    repBtn.textContent = 'كررت ↻';
+    repBtn.onclick = () => { vs.repeats += 1; saveState(); repLabel.textContent = 'التكرار: ' + vs.repeats; };
+    const memBtn = document.createElement('button');
+    memBtn.textContent = vs.memorized ? '✓ محفوظة' : 'وضع كمحفوظة';
+    if (vs.memorized) memBtn.classList.add('memorized');
+    memBtn.onclick = () => {
+      vs.memorized = !vs.memorized;
+      saveState();
+      renderSurah();
+    };
+    actions.appendChild(memBtn);
+    actions.appendChild(repBtn);
+    actions.appendChild(repLabel);
+    verseListEl.appendChild(actions);
+  });
+
+  progressText.textContent = memorizedCount + ' / ' + verses.length;
+  progressBar.style.width = (memorizedCount / verses.length * 100) + '%';
+}
+
+select.onchange = renderSurah;
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+
+loadState();
+renderSurah();
+</script>
+</body>
+</html>
