@@ -450,7 +450,9 @@ function updateFavButton(){
 }
 els.favToggleBtn.onclick = () => { toggleFavorite(currentSurah); };
 
-els.searchInput.addEventListener('focus', () => { renderSurahOverlay(''); els.searchInput.select(); els.surahOverlay.classList.add('show'); });
+function openSurahOverlay(){ renderSurahOverlay(''); els.surahOverlay.classList.add('show'); }
+els.searchInput.addEventListener('focus', openSurahOverlay);
+els.searchInput.addEventListener('click', openSurahOverlay);
 els.searchInput.addEventListener('input', () => renderSurahOverlay(els.searchInput.value));
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.surah-picker')) els.surahOverlay.classList.remove('show');
