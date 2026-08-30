@@ -276,8 +276,8 @@
         <option value="ar.hudhaify">علي بن عبدالرحمن الحذيفي</option>
         <option value="ar.mahermuaiqly">ماهر المعيقلي</option>
         <option value="ar.shaatree">أبو بكر الشاطري</option>
-        <option value="ar.muhammadayyub">محمد أيوب</option>
-        <option value="ar.faresabbad">فارس عباد</option>
+        <option value="ar.muhammadayyoub">محمد أيوب</option>
+        <option value="ar.faresabbad">فارس عباد (سورة كاملة)</option>
       </select>
     </div>
     <div class="toggle-row">
@@ -452,7 +452,9 @@ els.darkToggle.onchange = () => {
 };
 
 /* ---------- Overlays ---------- */
-function openOverlay(id){ document.getElementById(id).classList.add('show'); }
+const ALL_OVERLAY_IDS = ['statsOverlay', 'settingsOverlay', 'azkarOverlay', 'listenOverlay', 'ruqyahOverlay', 'prayerOverlay'];
+function closeAllOverlays(){ ALL_OVERLAY_IDS.forEach(id => { const el = document.getElementById(id); if (el) el.classList.remove('show'); }); }
+function openOverlay(id){ closeAllOverlays(); document.getElementById(id).classList.add('show'); }
 function closeOverlay(id){ document.getElementById(id).classList.remove('show'); }
 els.statsBtn.onclick = () => { renderStats(); openOverlay('statsOverlay'); };
 els.settingsBtn.onclick = () => openOverlay('settingsOverlay');
@@ -601,11 +603,16 @@ async function getSurahData(num){
   }
 
   let audios = [];
+  const SURAH_LEVEL_RECITERS = ['ar.faresabbad'];
   try {
-    const audioRes = await fetch('https://api.alquran.cloud/v1/surah/' + num + '/' + currentReciter);
-    if (audioRes.ok){
-      const audioJson = await audioRes.json();
-      audios = audioJson.data.ayahs.map(a => a.audio);
+    if (SURAH_LEVEL_RECITERS.includes(currentReciter)){
+      audios = ['https://cdn.islamic.network/quran/audio-surah/128/' + currentReciter + '/' + num + '.mp3'];
+    } else {
+      const audioRes = await fetch('https://api.alquran.cloud/v1/surah/' + num + '/' + currentReciter);
+      if (audioRes.ok){
+        const audioJson = await audioRes.json();
+        audios = audioJson.data.ayahs.map(a => a.audio);
+      }
     }
   } catch(e){ /* audio is optional; text still works without it, and without internet */ }
 
@@ -1004,12 +1011,14 @@ const RUQYAH_REFS = [
   { surah:2, from:255, to:255, label:'آية الكرسي' },
   { surah:2, from:285, to:286, label:'آخر آيتين من سورة البقرة' },
   { surah:7, from:54, to:56, label:'من سورة الأعراف' },
+  { surah:12, from:67, to:67, label:'رقية العين - سورة يوسف' },
   { surah:23, from:115, to:118, label:'آخر سورة المؤمنون' },
   { surah:37, from:1, to:10, label:'أول سورة الصافات' },
   { surah:59, from:21, to:24, label:'آخر سورة الحشر' },
+  { surah:68, from:51, to:52, label:'رقية العين والحسد - سورة القلم' },
+  { surah:113, from:1, to:5, label:'سورة الفلق (رقية من الحسد والسحر)' },
+  { surah:114, from:1, to:6, label:'سورة الناس (رقية من الوسواس)' },
   { surah:112, from:1, to:4, label:'سورة الإخلاص' },
-  { surah:113, from:1, to:5, label:'سورة الفلق' },
-  { surah:114, from:1, to:6, label:'سورة الناس' },
 ];
 
 async function renderRuqyah(){
@@ -1099,6 +1108,15 @@ els.bookmarkJumpBtn.onclick = () => {
 };
 
 /* ---------- Prayer times ---------- */
+function to12Hour(time24){
+  const [hStr, mStr] = time24.split(':');
+  let h = parseInt(hStr, 10);
+  const period = h >= 12 ? 'م' : 'ص';
+  h = h % 12;
+  if (h === 0) h = 12;
+  return h + ':' + mStr + ' ' + period;
+}
+
 els.prayerFetchBtn.onclick = () => {
   if (!('geolocation' in navigator)){
     els.prayerStatus.textContent = 'المتصفح مش بيدعم تحديد الموقع.';
@@ -1121,7 +1139,7 @@ els.prayerFetchBtn.onclick = () => {
       rows.forEach(([name, time]) => {
         const row = document.createElement('div');
         row.className = 'stat-row';
-        row.innerHTML = '<span>' + name + '</span><b>' + time.split(' ')[0] + '</b>';
+        row.innerHTML = '<span>' + name + '</span><b>' + to12Hour(time.split(' ')[0]) + '</b>';
         els.prayerTimesList.appendChild(row);
       });
       els.prayerStatus.textContent = 'حسب تاريخ اليوم في موقعك الحالي.';
