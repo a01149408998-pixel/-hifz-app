@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hifz-cache-v2';
+const CACHE_NAME = 'hifz-cache-v3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -26,24 +26,31 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Let Quran API requests go straight to the network (and get cached by the app itself in localStorage)
   if (url.hostname === 'api.alquran.cloud') {
     event.respondWith(fetch(event.request));
     return;
   }
 
+  if (url.hostname === 'cdn.islamic.network' || url.pathname.endsWith('.mp3')) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        return cached || fetch(event.request).then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          return response;
+        }).catch(() => cached);
+      })
+    );
+    return;
+  }
+
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return (
-        cached ||
-        fetch(event.request)
-          .then((response) => {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-            return response;
-          })
-          .catch(() => cached)
-      );
-    })
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
