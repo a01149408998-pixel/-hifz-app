@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hifz-offline-v6';
+const CACHE_NAME = 'hifz-offline-v7';
 const APP_SHELL = [
   './', './index.html', './manifest.json', './icon-180.png', './icon-192.png', './icon-512.png'
 ];
