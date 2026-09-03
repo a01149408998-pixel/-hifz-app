@@ -670,13 +670,12 @@ footer{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:min(560
           <div style="text-align:center;padding:40px;font-family:Tahoma,Arial,sans-serif;color:var(--ink-soft);">اختر سورة للبدء</div>
         </div>
       </div>
-      <div id="mushafSideRuler" aria-label="مسطرة التمرير التلقائي"><div class="ruler-track"><div class="ruler-ticks"></div><div id="mushafRulerThumb" class="ruler-thumb"></div></div><span class="ruler-label">اسحب ببطء أو بقوة</span></div>
       <div class="mushaf-nav">
         <button id="mushafPrev">▶ السابقة</button>
         <button id="mushafAutoScrollBtn" title="التمرير التلقائي">⏬ التمرير التلقائي</button>
         <button id="mushafNext">التالية ◀</button>
       </div>
-      <div class="mushaf-scroll-row" id="mushafScrollRow" style="display:none;">
+      <div class="mushaf-scroll-row" id="mushafScrollRow">
         <span>بطيء</span>
         <input type="range" id="mushafScrollSpeed" min="1" max="10" value="4">
         <span>سريع</span>
@@ -702,6 +701,21 @@ footer{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:min(560
   </div>
 </div>
 <footer>افتح قائمة المتصفح واختر «إضافة إلى الشاشة الرئيسية»</footer>
+
+
+<!-- Mushaf bookmark sheet -->
+<div class="overlay-bg" id="mushafBookmarkSheet" style="z-index:190;">
+  <div class="sheet mushaf-bookmark-sheet">
+    <h3>🔖 علامة الوقوف</h3>
+    <button class="mushaf-bookmark-ref" id="mushafBookmarkRef">لا توجد علامة محفوظة حتى الآن</button>
+    <div class="mushaf-bookmark-actions">
+      <button class="primary" id="mushafBookmarkGoBtn">الذهاب للآية</button>
+      <button id="mushafBookmarkDeleteBtn">حذف العلامة</button>
+      <button id="mushafBookmarkCloseBtn">إغلاق</button>
+    </div>
+    <p class="disclaimer" style="text-align:center;margin-bottom:0;">اضغط على أي آية داخل المصحف لحفظ مكان الوقوف الحالي.</p>
+  </div>
+</div>
 
 <!-- Listen overlay -->
 <div class="overlay-bg" id="listenOverlay">
@@ -1589,36 +1603,33 @@ document.getElementById('mushafSearchInput').addEventListener('keydown', (e) => 
   if (e.key === 'Enter') runMushafSearch();
 });
 
-/* ---- Mushaf auto-scroll: controlled directly from the side ruler ---- */
+/* ---- Mushaf auto-scroll: compact bottom ruler ---- */
 const MUSHAF_SPEED_KEY = 'hifz-mushaf-scroll-speed';
 let mushafScrollSpeed = parseFloat(localStorage.getItem(MUSHAF_SPEED_KEY) || '0.8');
 let mushafAutoScrollActive = false;
 let mushafAutoScrollRAF = null;
-let mushafRulerSpeed = 0;
-let mushafRulerPointerId = null;
-let mushafRulerLastY = 0;
 
 function mushafAutoScrollStep(){
-  if (!mushafAutoScrollActive || !mushafRulerSpeed) return;
-  window.scrollBy(0, mushafRulerSpeed);
+  if (!mushafAutoScrollActive) return;
+  window.scrollBy(0, mushafScrollSpeed);
   if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 6){
     if (mushafSurah < 114){
       loadMushafSurah(mushafSurah + 1).then(() => window.scrollTo({top:0, behavior:'auto'}));
-    } else {
-      stopMushafAutoScroll();
-      return;
-    }
+    } else { stopMushafAutoScroll(); return; }
   }
-  mushafAutoScrollRAF = requestAnimationFrame(mushafAutoScrollStep);
+  mushafAutoScrollRAF=requestAnimationFrame(mushafAutoScrollStep);
 }
 function setMushafAutoButton(active){
   const btn=document.getElementById('mushafAutoScrollBtn');
   if(!btn) return;
-  btn.textContent=active ? '⏸ إيقاف التمرير' : '⏬ التمرير التلقائي';
+  btn.textContent=active ? '⏸' : '⏬';
+  btn.setAttribute('aria-label', active ? 'إيقاف التمرير' : 'تشغيل التمرير');
+  btn.title=active ? 'إيقاف التمرير' : 'تشغيل التمرير';
   btn.classList.toggle('active',active);
 }
 function startMushafAutoScroll(speed){
-  mushafRulerSpeed=speed || mushafRulerSpeed || mushafScrollSpeed;
+  mushafScrollSpeed=Math.max(0.15, Math.abs(speed || mushafScrollSpeed || 0.8));
+  localStorage.setItem(MUSHAF_SPEED_KEY,mushafScrollSpeed);
   mushafAutoScrollActive=true;
   setMushafAutoButton(true);
   if(mushafAutoScrollRAF) cancelAnimationFrame(mushafAutoScrollRAF);
@@ -1626,65 +1637,33 @@ function startMushafAutoScroll(speed){
 }
 function stopMushafAutoScroll(){
   mushafAutoScrollActive=false;
-  mushafRulerSpeed=0;
   setMushafAutoButton(false);
   if(mushafAutoScrollRAF) cancelAnimationFrame(mushafAutoScrollRAF);
   mushafAutoScrollRAF=null;
 }
-
-/* زر احتياطي للتشغيل/الإيقاف، لكن التحكم الحقيقي في السرعة من المسطرة الجانبية */
 document.getElementById('mushafAutoScrollBtn').onclick=()=>{
   if(mushafAutoScrollActive) stopMushafAutoScroll();
   else startMushafAutoScroll(mushafScrollSpeed);
 };
 
-/* المسطرة: سحب بسيط = تمرير بطيء، سحب كبير = أسرع.
-   أعلى المسطرة = لأعلى، أسفلها = لأسفل، وتركها يوقف التمرير. */
-(function initMushafAutoRuler(){
-  const ruler=document.getElementById('mushafSideRuler');
-  const track=ruler?.querySelector('.ruler-track');
-  const thumb=document.getElementById('mushafRulerThumb');
-  if(!ruler || !track || !thumb) return;
-  let centerY=0;
-  const maxSpeed=5.2;
-  const minStartDistance=5;
-  function updateFromY(clientY){
-    const rect=track.getBoundingClientRect();
-    centerY=rect.top+rect.height/2;
-    const half=rect.height/2;
-    const delta=clientY-centerY;
-    const ratio=Math.max(-1,Math.min(1,delta/half));
-    const speed=Math.sign(ratio)*Math.max(0,Math.abs(ratio))*maxSpeed;
-    const thumbRatio=(clientY-rect.top)/rect.height;
-    thumb.style.top=(Math.max(0,Math.min(1,thumbRatio))*100)+'%';
-    if(Math.abs(delta)<minStartDistance){
-      stopMushafAutoScroll();
-      return;
-    }
-    mushafScrollSpeed=Math.max(0.15,Math.abs(speed));
+/* Bottom ruler: the farther you drag from the center, the faster the page moves. */
+(function initMushafBottomRuler(){
+  const input=document.getElementById('mushafScrollSpeed');
+  if(!input) return;
+  input.value=Math.min(10, Math.max(1, Math.round(mushafScrollSpeed*2.2)));
+  input.addEventListener('input',()=>{
+    const v=parseFloat(input.value||'4');
+    mushafScrollSpeed=0.12 + (v/10)*2.2;
     localStorage.setItem(MUSHAF_SPEED_KEY,mushafScrollSpeed);
-    startMushafAutoScroll(speed);
-  }
-  function reset(){
-    mushafRulerPointerId=null;
-    thumb.style.top='50%';
-    stopMushafAutoScroll();
-  }
-  ruler.addEventListener('pointerdown',e=>{
-    e.preventDefault();
-    mushafRulerPointerId=e.pointerId;
-    ruler.setPointerCapture?.(e.pointerId);
-    updateFromY(e.clientY);
+    if(mushafAutoScrollActive) startMushafAutoScroll(mushafScrollSpeed);
   });
-  ruler.addEventListener('pointermove',e=>{
-    if(mushafRulerPointerId!==e.pointerId) return;
-    e.preventDefault();
-    updateFromY(e.clientY);
+  input.addEventListener('pointerdown',()=>{
+    /* Sliding the ruler itself starts scrolling immediately. */
+    const v=parseFloat(input.value||'4');
+    mushafScrollSpeed=0.12 + (v/10)*2.2;
+    startMushafAutoScroll(mushafScrollSpeed);
   });
-  ruler.addEventListener('pointerup',reset);
-  ruler.addEventListener('pointercancel',reset);
-  ruler.addEventListener('lostpointercapture',reset);
-  track.addEventListener('click',e=>updateFromY(e.clientY));
+  input.addEventListener('pointerup',()=>{ /* keep running until pause is pressed */ });
 })();
 
 document.getElementById('mushafPage').addEventListener('touchstart',()=>{
@@ -1741,24 +1720,24 @@ function goToMushafBookmark(){
   }
   loadMushafSurah(parseInt(b.s,10),parseInt(b.a,10));
 }
-document.getElementById('mushafBookmarkBtn').onclick=goToMushafBookmark;
-
-/* ===== Side ruler scrolling ===== */
-(function initMushafSideRuler(){
-  const input=document.getElementById('mushafSideRulerInput');
-  if(!input) return;
-  let ticking=false;
-  function sync(){
-    const max=Math.max(1,document.documentElement.scrollHeight-window.innerHeight);
-    input.value=Math.round((window.scrollY/max)*1000);
+document.getElementById('mushafBookmarkBtn').onclick=()=>{
+  const b=loadJSON(MUSHAF_BOOKMARK_KEY,null);
+  const box=document.getElementById('mushafBookmarkSheet');
+  const ref=document.getElementById('mushafBookmarkRef');
+  if(!box || !ref) return;
+  if(b && b.s && b.a){
+    ref.textContent='🔖 سورة '+SURAH_LIST[parseInt(b.s,10)-1][1]+' — الآية '+arabicNumber(b.a);
+    ref.classList.add('has-bookmark');
+  }else{
+    ref.textContent='لا توجد علامة محفوظة حتى الآن';
+    ref.classList.remove('has-bookmark');
   }
-  window.addEventListener('scroll',()=>{ if(!ticking){requestAnimationFrame(()=>{sync();ticking=false;});ticking=true;}},{passive:true});
-  input.addEventListener('input',()=>{
-    const max=Math.max(0,document.documentElement.scrollHeight-window.innerHeight);
-    window.scrollTo({top:(parseInt(input.value,10)/1000)*max,behavior:'auto'});
-  });
-  sync();
-})();
+  box.classList.add('show');
+};
+function closeMushafBookmarkSheet(){ const box=document.getElementById('mushafBookmarkSheet'); if(box) box.classList.remove('show'); }
+document.getElementById('mushafBookmarkCloseBtn').onclick=closeMushafBookmarkSheet;
+document.getElementById('mushafBookmarkGoBtn').onclick=()=>{ closeMushafBookmarkSheet(); const b=loadJSON(MUSHAF_BOOKMARK_KEY,null); if(b&&b.s&&b.a) loadMushafSurah(parseInt(b.s,10),parseInt(b.a,10)); };
+document.getElementById('mushafBookmarkDeleteBtn').onclick=()=>{ localStorage.removeItem(MUSHAF_BOOKMARK_KEY); localStorage.removeItem(MUSHAF_POS_KEY); closeMushafBookmarkSheet(); document.querySelectorAll('.mushaf-ayah.bookmarked').forEach(x=>x.classList.remove('bookmarked')); document.getElementById('mushafPosLabel').textContent='لا توجد علامة محفوظة'; };
 
 /* ========== Azkar ========== */
 /* مصدر فيه العدد الصحيح لكل ذكر (count كرقم) */
@@ -2379,6 +2358,15 @@ setTimeout(() => {
   if (s){ s.style.opacity = '0'; setTimeout(() => { s.style.display = 'none'; }, 400); }
 }, 900);
 </script>
+
+<style>
+.mushaf-bookmark-sheet{padding:16px 14px 22px;}
+.mushaf-bookmark-ref{width:100%;padding:13px 10px;border:1px solid var(--gold-light);border-radius:10px;background:var(--green-light);color:var(--green);font-family:'Amiri',serif;font-size:18px;cursor:pointer;}
+.mushaf-bookmark-ref.has-bookmark{cursor:pointer;}
+.mushaf-bookmark-actions{display:flex;gap:6px;margin-top:10px;}
+.mushaf-bookmark-actions button{flex:1;min-height:38px;font-size:12px;padding:5px 7px;}
+</style>
+
 </body>
 </html>
 
@@ -2393,12 +2381,27 @@ setTimeout(() => {
 #viewMushaf .mushaf-ayah-range{font-size:10px!important;padding:1px 0!important;margin:2px 3px 2px!important}
 #viewMushaf .mushaf-ayah-range .orn{font-size:12px!important}
 #viewMushaf .mushaf-page{min-height:calc(100vh - 150px)!important;padding:20px 14px 40px!important}
-/* slim side ruler for reading */
-#mushafSideRuler{position:fixed;right:3px;top:50%;transform:translateY(-50%);z-index:180;width:30px;height:58vh;display:flex;align-items:center;justify-content:center;pointer-events:auto;touch-action:none}
-#mushafSideRuler .ruler-track{position:relative;width:18px;height:100%;border:1px solid var(--gold-light);border-radius:12px;background:color-mix(in srgb,var(--card-bg) 88%,transparent);box-shadow:0 2px 10px rgba(0,0,0,.18);touch-action:none}
-#mushafSideRuler .ruler-ticks{position:absolute;inset:6px 7px;background:repeating-linear-gradient(to bottom,var(--gold-light) 0 1px,transparent 1px 13px);opacity:.7;border-radius:8px}
-#mushafSideRuler .ruler-thumb{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:25px;height:42px;border-radius:13px;border:2px solid var(--gold);background:var(--green);box-shadow:0 2px 9px rgba(0,0,0,.3);touch-action:none}
-#mushafSideRuler .ruler-thumb:after{content:'↕';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#f4df9c;font:16px Tahoma,Arial,sans-serif}
-#mushafSideRuler .ruler-label{position:absolute;right:32px;top:50%;transform:translateY(-50%);font:9px Tahoma,Arial,sans-serif;color:var(--gold);background:var(--card-bg);border:1px solid var(--gold-light);border-radius:8px;padding:3px 4px;white-space:nowrap;opacity:.9;pointer-events:none}
 @media(max-width:380px){#viewMushaf .mushaf-topbar{grid-template-columns:31px 31px 1fr 31px 26px!important}.mushaf-icon{width:31px!important;height:31px!important;font-size:16px!important}}
+</style>
+
+<style>
+/* ===== Final Mushaf reading mode: full page + tiny controls ===== */
+#viewMushaf{padding-bottom:96px!important;margin-left:-14px!important;margin-right:-14px!important;background:var(--card-bg)!important;}
+#viewMushaf .mushaf-sticky-head{padding:1px 5px 3px!important;border-radius:0 0 7px 7px!important;box-shadow:0 2px 8px rgba(0,0,0,.18)!important;}
+#viewMushaf .mushaf-topbar{grid-template-columns:28px 28px 1fr 28px 24px!important;gap:2px!important;max-width:100%!important;}
+#viewMushaf .mushaf-icon{width:28px!important;height:28px!important;font-size:15px!important;border-radius:50%!important;}
+#viewMushaf .mushaf-title-plaque{min-height:31px!important;padding:2px 8px!important;border-radius:7px!important;border-width:1px!important;}
+#viewMushaf .mushaf-surah-name{font-size:13px!important;}
+#viewMushaf .mushaf-juz{font-size:8px!important;}
+#viewMushaf .mushaf-ayah-range{font-size:8px!important;padding:0!important;margin:1px 2px!important;border:0!important;}
+#viewMushaf .mushaf-ayah-range .orn{font-size:9px!important;}
+#viewMushaf .mushaf-frame{padding:2px 2px 6px!important;margin:0!important;}
+#viewMushaf .mushaf-page{width:100%!important;min-height:calc(100vh - 90px)!important;padding:18px 10px 30px!important;border-radius:2px!important;box-shadow:0 2px 8px rgba(0,0,0,.08)!important;}
+#viewMushaf .mushaf-nav{left:50%!important;right:auto!important;bottom:calc(5px + var(--safe-bottom))!important;width:calc(100vw - 18px)!important;padding:3px!important;gap:3px!important;border-radius:8px!important;box-shadow:0 -2px 10px rgba(0,0,0,.16)!important;}
+#viewMushaf .mushaf-nav button{min-height:28px!important;height:28px!important;padding:2px 6px!important;border-radius:6px!important;font-size:9px!important;line-height:1!important;}
+#viewMushaf .mushaf-nav #mushafAutoScrollBtn{width:30px!important;padding:2px!important;}
+#viewMushaf .mushaf-scroll-row{display:flex!important;position:fixed!important;left:50%!important;transform:translateX(-50%)!important;bottom:calc(39px + var(--safe-bottom))!important;z-index:170!important;width:min(300px,calc(100vw - 80px))!important;height:18px!important;margin:0!important;padding:1px 5px!important;gap:4px!important;border:1px solid var(--gold-light)!important;border-radius:8px!important;background:color-mix(in srgb,var(--card-bg) 96%,transparent)!important;box-shadow:0 1px 5px rgba(0,0,0,.12)!important;font-size:7px!important;}
+#viewMushaf .mushaf-scroll-row input[type="range"]{height:12px!important;min-width:0!important;accent-color:var(--gold)!important;}
+#viewMushaf .mushaf-scroll-row span{font-size:7px!important;white-space:nowrap!important;}
+@media(max-width:380px){#viewMushaf .mushaf-topbar{grid-template-columns:26px 26px 1fr 26px 22px!important}.mushaf-icon{width:26px!important;height:26px!important;font-size:14px!important}#viewMushaf .mushaf-page{padding-left:8px!important;padding-right:8px!important}}
 </style>
