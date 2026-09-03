@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hifz-offline-v12';
+const CACHE_NAME = 'hifz-offline-v8-audio-fix';
 const APP_SHELL = [
   './', './index.html', './manifest.json', './icon-180.png', './icon-192.png', './icon-512.png'
 ];
@@ -11,7 +11,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys => Promise.all(
-      keys.filter(k => k.startsWith('hifz-') && k !== CACHE_NAME).map(k => caches.delete(k))
+      keys.filter(k => k.startsWith('hifz-cache-') || k.startsWith('hifz-offline-')).filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
     ))
   );
   self.clients.claim();
@@ -29,15 +29,8 @@ self.addEventListener('fetch', event => {
     const cache = await caches.open(CACHE_NAME);
     const cached = await cache.match(event.request);
 
-    // App navigation/files: network-first so deployed updates are not stuck behind an old SW cache.
+    // App files: cache first for reliable offline startup.
     if (url.origin === location.origin) {
-      if (event.request.mode === 'navigate' || url.pathname.endsWith('/index.html') || url.pathname.endsWith('/sw.js')) {
-        try { return await cacheAndReturn(event.request, await fetch(event.request, {cache:'no-store'})); }
-        catch(e) {
-          const shell = await cache.match('./index.html');
-          return shell || cached || Response.error();
-        }
-      }
       if (cached) return cached;
       try { return await cacheAndReturn(event.request, await fetch(event.request)); }
       catch(e) { return cached || Response.error(); }
