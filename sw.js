@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hifz-offline-v9';
+const CACHE_NAME = 'hifz-offline-v12';
 const APP_SHELL = [
   './', './index.html', './manifest.json', './icon-180.png', './icon-192.png', './icon-512.png'
 ];
@@ -29,18 +29,18 @@ self.addEventListener('fetch', event => {
     const cache = await caches.open(CACHE_NAME);
     const cached = await cache.match(event.request);
 
-    // App files: cache first for reliable offline startup.
+    // App navigation/files: network-first so deployed updates are not stuck behind an old SW cache.
     if (url.origin === location.origin) {
+      if (event.request.mode === 'navigate' || url.pathname.endsWith('/index.html') || url.pathname.endsWith('/sw.js')) {
+        try { return await cacheAndReturn(event.request, await fetch(event.request, {cache:'no-store'})); }
+        catch(e) {
+          const shell = await cache.match('./index.html');
+          return shell || cached || Response.error();
+        }
+      }
       if (cached) return cached;
       try { return await cacheAndReturn(event.request, await fetch(event.request)); }
-      catch(e) {
-        // Keep the PWA usable when a navigation is opened offline.
-        if (event.request.mode === 'navigate') {
-          const shell = await cache.match('./index.html');
-          return shell || Response.error();
-        }
-        return cached || Response.error();
-      }
+      catch(e) { return cached || Response.error(); }
     }
 
     // Quran APIs, tafsir, azkar, prayer API, fonts and audio: cache first,
