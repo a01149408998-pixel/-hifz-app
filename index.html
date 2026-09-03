@@ -263,6 +263,7 @@ button:disabled{ opacity:.55; cursor:default; }
 #viewMushaf{ padding-bottom:88px; }
 .mushaf-pos{ font-family:Tahoma,Arial,sans-serif; font-size:12px; color:var(--ink-soft); text-align:center; }
 .mushaf-ayah.highlight{ background:color-mix(in srgb, var(--gold) 30%, transparent); border-radius:4px; }
+.mushaf-ayah.bookmarked{ text-decoration:underline; text-decoration-color:var(--gold); text-decoration-thickness:2px; text-underline-offset:5px; background:color-mix(in srgb,var(--gold) 12%,transparent); border-radius:4px; }
 
 /* Mushaf background palette */
 .mushaf-bg-row{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
@@ -669,9 +670,10 @@ footer{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:min(560
           <div style="text-align:center;padding:40px;font-family:Tahoma,Arial,sans-serif;color:var(--ink-soft);">اختر سورة للبدء</div>
         </div>
       </div>
+      <div id="mushafSideRuler" aria-label="مسطرة التمرير التلقائي"><div class="ruler-track"><div class="ruler-ticks"></div><div id="mushafRulerThumb" class="ruler-thumb"></div></div><span class="ruler-label">اسحب ببطء أو بقوة</span></div>
       <div class="mushaf-nav">
         <button id="mushafPrev">▶ السابقة</button>
-        <button id="mushafAutoScrollBtn" title="تمرير تلقائي">⏬ تمرير تلقائي</button>
+        <button id="mushafAutoScrollBtn" title="التمرير التلقائي">⏬ التمرير التلقائي</button>
         <button id="mushafNext">التالية ◀</button>
       </div>
       <div class="mushaf-scroll-row" id="mushafScrollRow" style="display:none;">
@@ -878,13 +880,34 @@ const THEME_KEY = 'hifz-theme';
 const REMINDER_KEY = 'hifz-reminder';
 const PRAYER_CACHE_KEY = 'hifz-prayer-cache';
 const MUSHAF_POS_KEY = 'hifz-mushaf-pos';
+const MUSHAF_BOOKMARK_KEY = 'hifz-mushaf-ayah-bookmark';
 const MUSHAF_FS_KEY = 'hifz-mushaf-fs';
 
 let currentReciter = localStorage.getItem(RECITER_KEY) || 'ar.alafasy';
 const AUDIO_QUALITY_KEY = 'hifz-audio-quality';
 let audioQuality = localStorage.getItem(AUDIO_QUALITY_KEY) || '64';
+const RECITER_DEFAULT_QUALITY = {
+  'ar.alafasy':'128','ar.husary':'128','ar.minshawi':'128','ar.minshawimujawwad':'64',
+  'ar.abdulbasit':'192','ar.abdulbasitmujawwad':'192','ar.sudais':'192','ar.shuraim':'128',
+  'ar.hudhaify':'128','ar.muhammadayoub':'128','ar.muhammadjibreel':'128','ar.ajamy':'128',
+  'ar.parhizgar':'64','ar.mahermuaiqly':'128','ar.shaatree':'128','ar.faresabbad':'128',
+  'ar.nasserqatami':'128','ar.yasseraldossari':'128','ar.abdullahmatroud':'128','ar.haniarrifai':'128','ar.abdulbarimohammed':'128'
+};
 function surahAudioUrl(surah, reciter=currentReciter, quality=audioQuality){
-  return 'https://cdn.islamic.network/quran/audio-surah/' + quality + '/' + reciter + '/' + surah + '.mp3';
+  const q = String(quality || RECITER_DEFAULT_QUALITY[reciter] || '128');
+  return 'https://cdn.islamic.network/quran/audio-surah/' + q + '/' + reciter + '/' + surah + '.mp3';
+}
+async function getReliableSurahAudioUrl(surah, reciter=currentReciter){
+  const preferred = String(audioQuality || RECITER_DEFAULT_QUALITY[reciter] || '128');
+  const candidates = [preferred, RECITER_DEFAULT_QUALITY[reciter], '128', '192', '64'].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i);
+  for (const q of candidates){
+    const url=surahAudioUrl(surah,reciter,q);
+    try {
+      const r=await fetch(url,{method:'HEAD',cache:'no-store'});
+      if(r.ok) return url;
+    } catch(e) {}
+  }
+  return surahAudioUrl(surah,reciter,RECITER_DEFAULT_QUALITY[reciter] || '128');
 }
 function audioCacheName(reciter=currentReciter){ return 'hifz-audio-' + reciter + '-' + audioQuality; }
 async function getCachedSurahAudioUrl(surah, reciter=currentReciter){
@@ -929,7 +952,9 @@ let currentAzkarChapter = parseInt(localStorage.getItem('hifz-azkar-chapter') ||
 let azkarAllMode = false;
 
 /* Mushaf */
-let mushafSurah = parseInt((loadJSON(MUSHAF_POS_KEY, {s:1}) || {s:1}).s, 10) || 1;
+let mushafSavedPos = loadJSON(MUSHAF_POS_KEY, {s:1, a:1}) || {s:1,a:1};
+let mushafSurah = parseInt(mushafSavedPos.s, 10) || 1;
+let mushafBookmark = loadJSON(MUSHAF_BOOKMARK_KEY, null);
 let mushafFontSize = parseInt(localStorage.getItem(MUSHAF_FS_KEY) || '28', 10);
 
 /* Prayer */
@@ -1013,9 +1038,15 @@ document.querySelectorAll('.overlay-bg').forEach(ov => {
 });
 
 /* ========== Visits / streak ========== */
+function localDateKey(d = new Date()){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return y + '-' + m + '-' + day;
+}
 function recordVisitToday(){
   const visits = loadJSON(VISITS_KEY, []);
-  const today = new Date().toISOString().slice(0,10);
+  const today = localDateKey();
   if (visits[visits.length-1] !== today){
     visits.push(today);
     if (visits.length > 400) visits.shift();
@@ -1028,7 +1059,7 @@ function calcStreak(){
   let streak = 0;
   let d = new Date();
   for (;;){
-    const key = d.toISOString().slice(0,10);
+    const key = localDateKey(d);
     if (visits.includes(key)){ streak++; d.setDate(d.getDate()-1); }
     else break;
   }
@@ -1037,30 +1068,35 @@ function calcStreak(){
 
 /* ========== Quran data ========== */
 async function getSurahData(num){
+  const cacheKey = 'hifz-surah-v4-' + num + '-' + currentReciter;
   if (surahCache[num]) return surahCache[num];
-  const cacheKey = 'hifz-surah-v3-' + num + '-' + currentReciter;
   const stored = localStorage.getItem(cacheKey);
-  if (stored){
-    try { const p = JSON.parse(stored); surahCache[num] = p; return p; } catch(e){}
-  }
-  const [textRes, audioRes] = await Promise.all([
-    fetch('https://api.alquran.cloud/v1/surah/' + num + '/quran-uthmani'),
-    fetch('https://api.alquran.cloud/v1/surah/' + num + '/' + currentReciter)
-  ]);
-  if (!textRes.ok || !audioRes.ok) throw new Error('network');
+  if (stored){ try { const p=JSON.parse(stored); surahCache[num]=p; return p; } catch(e){} }
+
+  // النص مستقل تمامًا عن الصوت: لو قارئ معيّن غير متاح لا يمنع فتح السورة أو التحفيظ.
+  const textRes = await fetch('https://api.alquran.cloud/v1/surah/' + num + '/quran-uthmani', {cache:'no-store'});
+  if (!textRes.ok) throw new Error('text-network');
   const textJson = await textRes.json();
-  const audioJson = await audioRes.json();
-  const textAyahs = textJson.data.ayahs;
-  const audioAyahs = audioJson.data.ayahs;
+  const textAyahs = textJson.data.ayahs || [];
+  let audioAyahs = [];
+  try {
+    const audioRes = await fetch('https://api.alquran.cloud/v1/surah/' + num + '/' + currentReciter, {cache:'no-store'});
+    if (audioRes.ok){
+      const audioJson = await audioRes.json();
+      audioAyahs = (audioJson.data && audioJson.data.ayahs) || [];
+    }
+  } catch(e) {}
+
   const data = {
     verses: textAyahs.map(a => a.text),
-    audios: audioAyahs.map(a => a.audio),
+    audios: textAyahs.map((a,i) => audioAyahs[i]?.audio || ''),
     meta: textAyahs.map(a => ({number:a.numberInSurah, juz:a.juz, page:a.page, ruku:a.ruku, hizbQuarter:a.hizbQuarter, sajda:a.sajda}))
   };
-  surahCache[num] = data;
+  surahCache[num]=data;
   try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch(e){}
   return data;
 }
+
 async function getTranslation(num){
   const cacheKey = 'hifz-trans-' + num;
   const stored = localStorage.getItem(cacheKey);
@@ -1380,11 +1416,15 @@ async function loadMushafSurah(num, jumpAyah){
   }
   document.documentElement.style.setProperty('--mushaf-fs', mushafFontSize + 'px');
   data.verses.forEach((text, i) => {
-    let t = text;
-    html += '<span class="mushaf-ayah" id="mushaf-ayah-' + (i+1) + '">' + t + '<span class="num">﴿' + arabicNumber(i+1) + '﴾</span></span> ';
+    const ayahNo=i+1;
+    html += '<span class="mushaf-ayah" id="mushaf-ayah-' + ayahNo + '" data-ayah="' + ayahNo + '" title="اضغط لحفظ علامة الوقوف">' + text + '<span class="num">﴿' + arabicNumber(ayahNo) + '﴾</span></span> ';
   });
   page.innerHTML = html;
-  saveJSON(MUSHAF_POS_KEY, { s: num });
+  page.querySelectorAll('.mushaf-ayah').forEach(el => {
+    el.addEventListener('click', () => saveMushafAyahBookmark(num, parseInt(el.dataset.ayah,10), true));
+  });
+  const savedAyah = (mushafBookmark && mushafBookmark.s===num) ? mushafBookmark.a : 1;
+  saveJSON(MUSHAF_POS_KEY, { s: num, a: savedAyah });
   if (jumpAyah){
     setTimeout(() => {
       const target = document.getElementById('mushaf-ayah-' + jumpAyah);
@@ -1549,21 +1589,21 @@ document.getElementById('mushafSearchInput').addEventListener('keydown', (e) => 
   if (e.key === 'Enter') runMushafSearch();
 });
 
-/* ---- Mushaf auto-scroll ---- */
+/* ---- Mushaf auto-scroll: controlled directly from the side ruler ---- */
 const MUSHAF_SPEED_KEY = 'hifz-mushaf-scroll-speed';
-let mushafScrollSpeed = parseInt(localStorage.getItem(MUSHAF_SPEED_KEY) || '4', 10);
+let mushafScrollSpeed = parseFloat(localStorage.getItem(MUSHAF_SPEED_KEY) || '0.8');
 let mushafAutoScrollActive = false;
 let mushafAutoScrollRAF = null;
-document.getElementById('mushafScrollSpeed').value = mushafScrollSpeed;
+let mushafRulerSpeed = 0;
+let mushafRulerPointerId = null;
+let mushafRulerLastY = 0;
+
 function mushafAutoScrollStep(){
-  if (!mushafAutoScrollActive) return;
-  window.scrollBy(0, mushafScrollSpeed * 0.35);
-  if ((window.innerHeight + window.scrollY) >= document.body.scrollHeight - 6){
+  if (!mushafAutoScrollActive || !mushafRulerSpeed) return;
+  window.scrollBy(0, mushafRulerSpeed);
+  if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 6){
     if (mushafSurah < 114){
-      loadMushafSurah(mushafSurah + 1).then(() => {
-        const mushafView = document.getElementById('viewMushaf');
-        if (mushafView) window.scrollTo({ top: 0, behavior: 'auto' });
-      });
+      loadMushafSurah(mushafSurah + 1).then(() => window.scrollTo({top:0, behavior:'auto'}));
     } else {
       stopMushafAutoScroll();
       return;
@@ -1571,31 +1611,85 @@ function mushafAutoScrollStep(){
   }
   mushafAutoScrollRAF = requestAnimationFrame(mushafAutoScrollStep);
 }
-function startMushafAutoScroll(){
-  mushafAutoScrollActive = true;
-  const btn = document.getElementById('mushafAutoScrollBtn');
-  btn.textContent = '⏸ إيقاف التمرير';
-  btn.classList.add('active');
-  document.getElementById('mushafScrollRow').style.display = 'flex';
-  mushafAutoScrollRAF = requestAnimationFrame(mushafAutoScrollStep);
+function setMushafAutoButton(active){
+  const btn=document.getElementById('mushafAutoScrollBtn');
+  if(!btn) return;
+  btn.textContent=active ? '⏸ إيقاف التمرير' : '⏬ التمرير التلقائي';
+  btn.classList.toggle('active',active);
+}
+function startMushafAutoScroll(speed){
+  mushafRulerSpeed=speed || mushafRulerSpeed || mushafScrollSpeed;
+  mushafAutoScrollActive=true;
+  setMushafAutoButton(true);
+  if(mushafAutoScrollRAF) cancelAnimationFrame(mushafAutoScrollRAF);
+  mushafAutoScrollRAF=requestAnimationFrame(mushafAutoScrollStep);
 }
 function stopMushafAutoScroll(){
-  mushafAutoScrollActive = false;
-  const btn = document.getElementById('mushafAutoScrollBtn');
-  btn.textContent = '⏬ تمرير تلقائي';
-  btn.classList.remove('active');
-  if (mushafAutoScrollRAF) cancelAnimationFrame(mushafAutoScrollRAF);
+  mushafAutoScrollActive=false;
+  mushafRulerSpeed=0;
+  setMushafAutoButton(false);
+  if(mushafAutoScrollRAF) cancelAnimationFrame(mushafAutoScrollRAF);
+  mushafAutoScrollRAF=null;
 }
-document.getElementById('mushafAutoScrollBtn').onclick = () => {
-  if (mushafAutoScrollActive) stopMushafAutoScroll(); else startMushafAutoScroll();
+
+/* زر احتياطي للتشغيل/الإيقاف، لكن التحكم الحقيقي في السرعة من المسطرة الجانبية */
+document.getElementById('mushafAutoScrollBtn').onclick=()=>{
+  if(mushafAutoScrollActive) stopMushafAutoScroll();
+  else startMushafAutoScroll(mushafScrollSpeed);
 };
-document.getElementById('mushafScrollSpeed').oninput = (e) => {
-  mushafScrollSpeed = parseInt(e.target.value, 10);
-  localStorage.setItem(MUSHAF_SPEED_KEY, mushafScrollSpeed);
-};
-document.getElementById('mushafPage').addEventListener('touchstart', () => {
-  if (mushafAutoScrollActive) stopMushafAutoScroll();
-}, { passive: true });
+
+/* المسطرة: سحب بسيط = تمرير بطيء، سحب كبير = أسرع.
+   أعلى المسطرة = لأعلى، أسفلها = لأسفل، وتركها يوقف التمرير. */
+(function initMushafAutoRuler(){
+  const ruler=document.getElementById('mushafSideRuler');
+  const track=ruler?.querySelector('.ruler-track');
+  const thumb=document.getElementById('mushafRulerThumb');
+  if(!ruler || !track || !thumb) return;
+  let centerY=0;
+  const maxSpeed=5.2;
+  const minStartDistance=5;
+  function updateFromY(clientY){
+    const rect=track.getBoundingClientRect();
+    centerY=rect.top+rect.height/2;
+    const half=rect.height/2;
+    const delta=clientY-centerY;
+    const ratio=Math.max(-1,Math.min(1,delta/half));
+    const speed=Math.sign(ratio)*Math.max(0,Math.abs(ratio))*maxSpeed;
+    const thumbRatio=(clientY-rect.top)/rect.height;
+    thumb.style.top=(Math.max(0,Math.min(1,thumbRatio))*100)+'%';
+    if(Math.abs(delta)<minStartDistance){
+      stopMushafAutoScroll();
+      return;
+    }
+    mushafScrollSpeed=Math.max(0.15,Math.abs(speed));
+    localStorage.setItem(MUSHAF_SPEED_KEY,mushafScrollSpeed);
+    startMushafAutoScroll(speed);
+  }
+  function reset(){
+    mushafRulerPointerId=null;
+    thumb.style.top='50%';
+    stopMushafAutoScroll();
+  }
+  ruler.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    mushafRulerPointerId=e.pointerId;
+    ruler.setPointerCapture?.(e.pointerId);
+    updateFromY(e.clientY);
+  });
+  ruler.addEventListener('pointermove',e=>{
+    if(mushafRulerPointerId!==e.pointerId) return;
+    e.preventDefault();
+    updateFromY(e.clientY);
+  });
+  ruler.addEventListener('pointerup',reset);
+  ruler.addEventListener('pointercancel',reset);
+  ruler.addEventListener('lostpointercapture',reset);
+  track.addEventListener('click',e=>updateFromY(e.clientY));
+})();
+
+document.getElementById('mushafPage').addEventListener('touchstart',()=>{
+  if(mushafAutoScrollActive) stopMushafAutoScroll();
+},{passive:true});
 
 /* Smooth swipe navigation between Mushaf surahs */
 (function initMushafSwipe(){
@@ -1625,11 +1719,46 @@ document.getElementById('mushafMoreBtn').onclick=toggleMushafTools;
 document.getElementById('mushafGearBtn').onclick=toggleMushafTools;
 document.getElementById('mushafMenuBtn').onclick=()=>showView('home');
 document.getElementById('backFromMushaf').onclick=()=>showView('home');
-document.getElementById('mushafBookmarkBtn').onclick=()=>{
-  saveJSON(MUSHAF_POS_KEY,{s:mushafSurah});
+function saveMushafAyahBookmark(s, a, notify){
+  mushafBookmark={s:s,a:a};
+  saveJSON(MUSHAF_BOOKMARK_KEY,mushafBookmark);
+  saveJSON(MUSHAF_POS_KEY,{s:s,a:a});
+  document.querySelectorAll('.mushaf-ayah.bookmarked').forEach(x=>x.classList.remove('bookmarked'));
+  const target=document.getElementById('mushaf-ayah-'+a);
+  if(target && s===mushafSurah) target.classList.add('bookmarked');
   const label=document.getElementById('mushafPosLabel');
-  if(label) label.textContent='تم حفظ علامة الوقوف — سورة '+SURAH_LIST[mushafSurah-1][1];
-};
+  if(label) label.textContent='🔖 الوقوف: سورة '+SURAH_LIST[s-1][1]+' — آية '+arabicNumber(a);
+  if(notify){
+    const btn=document.getElementById('mushafBookmarkBtn');
+    if(btn){btn.textContent='✓';setTimeout(()=>btn.textContent='🔖',1200);}
+  }
+}
+function goToMushafBookmark(){
+  const b=loadJSON(MUSHAF_BOOKMARK_KEY,null);
+  if(!b || !b.s){
+    document.getElementById('mushafPosLabel').textContent='اضغط على الآية لحفظ علامة الوقوف';
+    return;
+  }
+  loadMushafSurah(parseInt(b.s,10),parseInt(b.a,10));
+}
+document.getElementById('mushafBookmarkBtn').onclick=goToMushafBookmark;
+
+/* ===== Side ruler scrolling ===== */
+(function initMushafSideRuler(){
+  const input=document.getElementById('mushafSideRulerInput');
+  if(!input) return;
+  let ticking=false;
+  function sync(){
+    const max=Math.max(1,document.documentElement.scrollHeight-window.innerHeight);
+    input.value=Math.round((window.scrollY/max)*1000);
+  }
+  window.addEventListener('scroll',()=>{ if(!ticking){requestAnimationFrame(()=>{sync();ticking=false;});ticking=true;}},{passive:true});
+  input.addEventListener('input',()=>{
+    const max=Math.max(0,document.documentElement.scrollHeight-window.innerHeight);
+    window.scrollTo({top:(parseInt(input.value,10)/1000)*max,behavior:'auto'});
+  });
+  sync();
+})();
 
 /* ========== Azkar ========== */
 /* مصدر فيه العدد الصحيح لكل ذكر (count كرقم) */
@@ -1964,8 +2093,9 @@ function initPrayer(){
     prayerData = cached;
     updatePrayerUI();
     startPrayerCountdown();
-    // refresh if older than 12h
-    if (navigator.onLine && Date.now() - (cached.fetchedAt || 0) > 12 * 3600000 && cached.lat){
+    // refresh if older than 12h or the saved date is no longer today
+    const cachedGregorian = cached.date && cached.date.gregorian ? cached.date.gregorian.split('/').reverse().join('-') : '';
+    if (navigator.onLine && (Date.now() - (cached.fetchedAt || 0) > 12 * 3600000 || cachedGregorian !== localDateKey()) && cached.lat){
       fetchPrayerTimes(cached.lat, cached.lng).catch(()=>{});
     }
   } else {
@@ -2072,8 +2202,11 @@ document.getElementById('listenPlayBtn').onclick = async () => {
     const name = SURAH_LIST[n-1][1];
     status.textContent = 'القارئ: ' + (RECITER_NAME_MAP[listenReciter] || listenReciter) + ' — سورة ' + name + ' (' + n + '/114)';
     const url = await getCachedSurahAudioUrl(n, listenReciter);
+    let reliableUrl = url;
+    if (url === surahAudioUrl(n, listenReciter)) reliableUrl = await getReliableSurahAudioUrl(n, listenReciter);
+    const finalUrl = reliableUrl;
     await new Promise(resolve => {
-      audioEl.src = url;
+      audioEl.src = finalUrl;
       audioEl.onended = resolve;
       audioEl.onerror = () => { status.textContent = 'تعذر تشغيل سورة ' + name + ' لهذا القارئ. جرّب قارئًا آخر أو جودة 64/128.'; resolve(); };
       audioEl.play().catch(() => { status.textContent = 'اضغط زر التشغيل مرة أخرى للسماح بالتشغيل.'; resolve(); });
@@ -2174,7 +2307,7 @@ async function downloadAllAudioForOffline(){
   btn.disabled = true;
   let done = 0, failed = 0;
   for (let i = 1; i <= 114; i++){
-    const url = surahAudioUrl(i);
+    const url = await getReliableSurahAudioUrl(i, currentReciter);
     statusEl.textContent = 'جاري تحميل صوت ' + SURAH_LIST[i-1][1] + ' (' + i + '/114)...';
     const ok = await cacheOneAudio(url);
     if (ok) done++; else failed++;
@@ -2193,7 +2326,8 @@ async function downloadAllRecitersAudioForOffline(){
     const [reciter] = list[r];
     for (let i = 1; i <= 114; i++){
       statusEl.textContent = 'جاري تحميل ' + (RECITER_NAME_MAP[reciter] || reciter) + ' — السورة ' + i + '/114 (' + (r+1) + '/' + list.length + ')';
-      const ok = await cacheOneAudio(surahAudioUrl(i, reciter), reciter);
+      const reliable = await getReliableSurahAudioUrl(i, reciter);
+      const ok = await cacheOneAudio(reliable, reciter);
       if (ok) totalDone++; else totalFailed++;
     }
   }
@@ -2247,3 +2381,24 @@ setTimeout(() => {
 </script>
 </body>
 </html>
+
+<style>
+/* ===== Final reading improvements ===== */
+#viewMushaf .mushaf-sticky-head{padding:2px 7px 4px!important;border-radius:0 0 10px 10px!important}
+#viewMushaf .mushaf-topbar{grid-template-columns:34px 34px 1fr 34px 28px!important;gap:3px!important}
+#viewMushaf .mushaf-icon{width:34px!important;height:34px!important;font-size:18px!important}
+#viewMushaf .mushaf-title-plaque{min-height:38px!important;padding:3px 20px 2px!important;border-radius:10px!important}
+#viewMushaf .mushaf-surah-name{font-size:15px!important}
+#viewMushaf .mushaf-juz{font-size:10px!important}
+#viewMushaf .mushaf-ayah-range{font-size:10px!important;padding:1px 0!important;margin:2px 3px 2px!important}
+#viewMushaf .mushaf-ayah-range .orn{font-size:12px!important}
+#viewMushaf .mushaf-page{min-height:calc(100vh - 150px)!important;padding:20px 14px 40px!important}
+/* slim side ruler for reading */
+#mushafSideRuler{position:fixed;right:3px;top:50%;transform:translateY(-50%);z-index:180;width:30px;height:58vh;display:flex;align-items:center;justify-content:center;pointer-events:auto;touch-action:none}
+#mushafSideRuler .ruler-track{position:relative;width:18px;height:100%;border:1px solid var(--gold-light);border-radius:12px;background:color-mix(in srgb,var(--card-bg) 88%,transparent);box-shadow:0 2px 10px rgba(0,0,0,.18);touch-action:none}
+#mushafSideRuler .ruler-ticks{position:absolute;inset:6px 7px;background:repeating-linear-gradient(to bottom,var(--gold-light) 0 1px,transparent 1px 13px);opacity:.7;border-radius:8px}
+#mushafSideRuler .ruler-thumb{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:25px;height:42px;border-radius:13px;border:2px solid var(--gold);background:var(--green);box-shadow:0 2px 9px rgba(0,0,0,.3);touch-action:none}
+#mushafSideRuler .ruler-thumb:after{content:'↕';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#f4df9c;font:16px Tahoma,Arial,sans-serif}
+#mushafSideRuler .ruler-label{position:absolute;right:32px;top:50%;transform:translateY(-50%);font:9px Tahoma,Arial,sans-serif;color:var(--gold);background:var(--card-bg);border:1px solid var(--gold-light);border-radius:8px;padding:3px 4px;white-space:nowrap;opacity:.9;pointer-events:none}
+@media(max-width:380px){#viewMushaf .mushaf-topbar{grid-template-columns:31px 31px 1fr 31px 26px!important}.mushaf-icon{width:31px!important;height:31px!important;font-size:16px!important}}
+</style>
